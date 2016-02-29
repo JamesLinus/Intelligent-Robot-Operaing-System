@@ -1,0 +1,2042 @@
+# This is a BitKeeper generated patch for the following project:
+# Project Name: Linux kernel tree
+# This patch format is intended for GNU patch command version 2.5 or higher.
+# This patch includes the following deltas:
+#	           ChangeSet	1.1098  -> 1.1100 
+#	include/asm-i386/mpspec.h	1.9     -> 1.10   
+#	include/linux/acpi.h	1.17    -> 1.18   
+#	  drivers/acpi/osl.c	1.26    -> 1.27   
+#	include/asm-i386/acpi.h	1.5     -> 1.6    
+#	            Makefile	1.233   -> 1.234  
+#	drivers/acpi/toshiba_acpi.c	1.5     -> 1.6    
+#	drivers/acpi/utilities/utglobal.c	1.20    -> 1.21   
+#	include/acpi/acpi_drivers.h	1.5     -> 1.6    
+#	drivers/acpi/tables.c	1.9     -> 1.10   
+#	drivers/hotplug/Config.in	1.4     -> 1.5    
+#	drivers/acpi/executer/exutils.c	1.17    -> 1.18   
+#	include/acpi/acconfig.h	1.35    -> 1.36   
+#	arch/i386/kernel/acpitable.h	1.1     -> 1.2    
+#	include/acpi/platform/acenv.h	1.12    -> 1.13   
+#	drivers/acpi/tables/tbinstal.c	1.16    -> 1.17   
+#	arch/i386/kernel/mpparse.c	1.30    -> 1.31   
+#	arch/i386/kernel/io_apic.c	1.29    -> 1.30   
+#	arch/i386/kernel/dmi_scan.c	1.34    -> 1.35   
+#	drivers/acpi/tables/tbconvrt.c	1.21    -> 1.22   
+#	arch/i386/kernel/setup.c	1.70    -> 1.71   
+#	arch/i386/kernel/smpboot.c	1.14    -> 1.15   
+#	drivers/acpi/processor.c	1.12    -> 1.13   
+#	Documentation/kernel-parameters.txt	1.9     -> 1.10   
+#	drivers/acpi/pci_link.c	1.6     -> 1.7    
+#	drivers/acpi/tables/tbrsdt.c	1.9     -> 1.10   
+#	  drivers/acpi/bus.c	1.15    -> 1.16   
+#	drivers/acpi/tables/tbget.c	1.16    -> 1.17   
+#	include/asm-i386/io_apic.h	1.11    -> 1.12   
+#	drivers/acpi/tables/tbxfroot.c	1.14    -> 1.15   
+#	arch/i386/kernel/acpitable.c	1.1     -> 1.2    
+#	    drivers/Makefile	1.12    -> 1.13   
+#	arch/i386/kernel/acpi.c	1.11    -> 1.12   
+#	drivers/acpi/hardware/hwregs.c	1.20    -> 1.21   
+#	drivers/acpi/Config.in	1.11    -> 1.12   
+#	Documentation/Configure.help	1.176   -> 1.177  
+#	drivers/acpi/Makefile	1.16    -> 1.17   
+#	drivers/acpi/pci_irq.c	1.10    -> 1.11   
+#
+# The following is the BitKeeper ChangeSet Log
+# --------------------------------------------
+# 03/08/21	len.brown@intel.com	1.1099
+# acpi-20030813-2.4.22-rc2.diff
+# --------------------------------------------
+# 03/08/21	len.brown@intel.com	1.1100
+# acpi-build.patch
+# --------------------------------------------
+#
+diff -Nru a/Documentation/Configure.help b/Documentation/Configure.help
+--- a/Documentation/Configure.help	Thu Aug 21 22:18:44 2003
++++ b/Documentation/Configure.help	Thu Aug 21 22:18:44 2003
+@@ -18846,19 +18846,24 @@
+   The ACPI Sourceforge project may also be of interest:
+   <http://sf.net/projects/acpi/>
+ 
+-ACPI Processor Enumeration Only
++ACPI Processor Enumeration for HT
+ CONFIG_ACPI_HT_ONLY
+-  This option enables limited ACPI support -- just enough to
+-  enumerate processors from the ACPI Multiple APIC Description
+-  Table (MADT).  Note that ACPI supports both logical (e.g. Hyper-
+-  Threading) and physical processors, where the MultiProcessor
+-  Specification (MPS) table only supports physical processors.
++  ACPI enumerates both logical (a.k.a. Hyper-Threaded -- HT)
++  and physical processors.  It is designed to obsolete several older
++  specifications, including the MultiProcessor Specification (MPS),
++  which supported only physical processors.
+ 
+-  Full ACPI support (CONFIG_ACPI) is preferred.  Use this option
+-  only if you wish to limit ACPI's role to processor enumeration.
++  CONFIG_ACPI_HT_ONLY includes just the minimal ACPI boot-time code
++  necessary to enumerate logical processors and enable HT.
+ 
+-  In this configuration, ACPI defaults to off. It must be enabled
+-  on the command-line with the "acpismp=force" option.
++  CONFIG_ACPI includes this code, plus IO APIC enumeration,
++  and the hooks to run the ACPI AML interpreter for run-time events.
++
++  When CONFIG_ACPI is selected, the command-line option "acpi=ht"
++  is available to run just the ACPI boot-time code -- just as if
++  only CONFIG_ACPI_HT_ONLY were selected.
++
++  Note that "acpi=off" can be used to disable all ACPI code in the kernel.
+ 
+ Enable ACPI 2.0 with errata 1.3
+ CONFIG_ACPI20
+diff -Nru a/Documentation/kernel-parameters.txt b/Documentation/kernel-parameters.txt
+--- a/Documentation/kernel-parameters.txt	Thu Aug 21 22:18:44 2003
++++ b/Documentation/kernel-parameters.txt	Thu Aug 21 22:18:44 2003
+@@ -69,8 +69,10 @@
+ 	53c7xx=		[HW,SCSI] Amiga SCSI controllers.
+ 
+ 	acpi=		[HW,ACPI] Advanced Configuration and Power Interface 
+-
+-	acpismp=force	[IA-32] Early setup parse and use ACPI SMP table.
++		force	Force ACPI on, even if blacklisted platform
++		off	Disable ACPI
++		ht	Limit ACPI to boot-time LAPIC enumeration for HT,
++			disabling the run-time AML interpreter.
+  
+ 	ad1816=		[HW,SOUND]
+ 
+@@ -404,8 +406,6 @@
+ 	no-hlt		[BUGS=IA-32] Tells the kernel that the hlt
+ 			instruction doesn't work correctly and not to
+ 			use it.
+-
+-	noht		[SMP,IA-32] Disables P4 Xeon(tm) HyperThreading.
+ 
+ 	noisapnp	[ISAPNP] Disables ISA PnP code.
+ 
+diff -Nru a/Makefile b/Makefile
+--- a/Makefile	Thu Aug 21 22:18:44 2003
++++ b/Makefile	Thu Aug 21 22:18:44 2003
+@@ -135,7 +135,7 @@
+ DRIVERS-m :=
+ DRIVERS-  :=
+ 
+-DRIVERS-$(CONFIG_ACPI) += drivers/acpi/acpi.o
++DRIVERS-$(CONFIG_ACPI_BOOT) += drivers/acpi/acpi.o
+ DRIVERS-$(CONFIG_PARPORT) += drivers/parport/driver.o
+ DRIVERS-y += drivers/char/char.o \
+ 	drivers/block/block.o \
+diff -Nru a/arch/i386/kernel/acpi.c b/arch/i386/kernel/acpi.c
+--- a/arch/i386/kernel/acpi.c	Thu Aug 21 22:18:44 2003
++++ b/arch/i386/kernel/acpi.c	Thu Aug 21 22:18:44 2003
+@@ -49,13 +49,16 @@
+ 
+ #define PREFIX			"ACPI: "
+ 
+-extern int acpi_disabled;
++int acpi_lapic = 0;
++int acpi_ioapic = 0;
+ 
+ /* --------------------------------------------------------------------------
+                               Boot-time Configuration
+    -------------------------------------------------------------------------- */
+ 
+ #ifdef CONFIG_ACPI_BOOT
++extern int acpi_disabled;
++extern int acpi_ht;
+ 
+ enum acpi_irq_model_id		acpi_irq_model;
+ 
+@@ -103,8 +106,6 @@
+ 
+ #ifdef CONFIG_X86_LOCAL_APIC
+ 
+-int acpi_lapic;
+-
+ static u64 acpi_lapic_addr __initdata = APIC_DEFAULT_PHYS_BASE;
+ 
+ 
+@@ -191,9 +192,7 @@
+ 
+ #endif /*CONFIG_X86_LOCAL_APIC*/
+ 
+-#ifdef CONFIG_X86_IO_APIC
+-
+-int acpi_ioapic;
++#if defined(CONFIG_X86_IO_APIC) && defined(CONFIG_ACPI_INTERPRETER)
+ 
+ static int __init
+ acpi_parse_ioapic (
+@@ -255,7 +254,7 @@
+ 	return 0;
+ }
+ 
+-#endif /*CONFIG_X86_IO_APIC*/
++#endif /*CONFIG_X86_IO_APIC && CONFIG_ACPI_INTERPRETER*/
+ 
+ 
+ static unsigned long __init
+@@ -297,11 +296,33 @@
+ }
+ 
+ 
++/*
++ * acpi_boot_init()
++ *  called from setup_arch(), always.
++ *	1. maps ACPI tables for later use
++ *	2. enumerates lapics
++ *	3. enumerates io-apics
++ *
++ * side effects:
++ * 	acpi_lapic = 1 if LAPIC found
++ *	acpi_ioapic = 1 if IOAPIC found
++ *	if (acpi_lapic && acpi_ioapic) smp_found_config = 1;
++ *	if acpi_blacklisted() acpi_disabled = 1;
++ *	acpi_irq_model=...
++ *	...
++ *
++ * return value: (currently ignored)
++ *	0: success
++ *	!0: failure
++ */
+ int __init
+ acpi_boot_init (void)
+ {
+ 	int			result = 0;
+ 
++	if (acpi_disabled && !acpi_ht)
++		return(1);
++
+ 	/*
+ 	 * The default interrupt routing model is PIC (8259).  This gets
+ 	 * overriden if IOAPICs are enumerated (below).
+@@ -317,11 +338,10 @@
+ 
+ 	result = acpi_blacklisted();
+ 	if (result) {
++		printk(KERN_NOTICE PREFIX "BIOS listed in blacklist, disabling ACPI support\n");
+ 		acpi_disabled = 1;
+ 		return result;
+ 	}
+-	else
+-		printk(KERN_NOTICE PREFIX "BIOS passes blacklist\n");
+ 
+ #ifdef CONFIG_X86_LOCAL_APIC
+ 
+@@ -383,13 +403,33 @@
+ 
+ #endif /*CONFIG_X86_LOCAL_APIC*/
+ 
+-#ifdef CONFIG_X86_IO_APIC
++#if defined(CONFIG_X86_IO_APIC) && defined(CONFIG_ACPI_INTERPRETER)
+ 
+ 	/* 
+ 	 * I/O APIC 
+ 	 * --------
+ 	 */
+ 
++	/*
++	 * ACPI interpreter is required to complete interrupt setup,
++	 * so if it is off, don't enumerate the io-apics with ACPI.
++	 * If MPS is present, it will handle them,
++	 * otherwise the system will stay in PIC mode
++	 */
++	if (acpi_disabled) {
++		return 1;
++	}
++
++	/*
++	 * if "noapic" boot option, don't look for IO-APICs
++	 */
++	if (ioapic_setup_disabled()) {
++		printk(KERN_INFO PREFIX "Skipping IOAPIC probe "
++			"due to 'noapic' option.\n");
++		return 1;
++        }
++
++
+ 	result = acpi_table_parse_madt(ACPI_MADT_IOAPIC, acpi_parse_ioapic);
+ 	if (!result) { 
+ 		printk(KERN_ERR PREFIX "No IOAPIC entries present\n");
+@@ -421,12 +461,10 @@
+ 
+ 	acpi_ioapic = 1;
+ 
+-#endif /*CONFIG_X86_IO_APIC*/
+-
+-#ifdef CONFIG_X86_LOCAL_APIC
+ 	if (acpi_lapic && acpi_ioapic)
+ 		smp_found_config = 1;
+-#endif
++
++#endif /*CONFIG_X86_IO_APIC && CONFIG_ACPI_INTERPRETER*/
+ 
+ 	return 0;
+ }
+diff -Nru a/arch/i386/kernel/acpitable.c b/arch/i386/kernel/acpitable.c
+--- a/arch/i386/kernel/acpitable.c	Thu Aug 21 22:18:44 2003
++++ b/arch/i386/kernel/acpitable.c	Thu Aug 21 22:18:44 2003
+@@ -95,7 +95,7 @@
+ static void *__init
+ acpi_tb_scan_memory_for_rsdp(void *address, int length)
+ {
+-	u32 offset;
++	int offset;
+ 
+ 	if (length <= 0)
+ 		return NULL;
+@@ -118,7 +118,8 @@
+ 	}
+ 
+ 	/* Searched entire block, no RSDP was found */
+-	printk(KERN_INFO "ACPI: Searched entire block, no RSDP was found.\n");
++	dprintk(KERN_INFO "ACPI: Searched entire block 0x%x:0x%x, no RSDP was found.\n",
++		(int)address, (int)address + length);
+ 	return NULL;
+ }
+ 
+@@ -331,7 +332,7 @@
+ 	printk(KERN_INFO "CPU %d (0x%02x00)", total_cpus, local_apic->id);
+ 
+ 	if (local_apic->flags.enabled) {
+-		printk(" enabled");
++		printk(" enabled\n");
+ 		ix = local_apic->id;
+ 		if (ix >= MAX_APICS) {
+ 			printk(KERN_WARNING
+@@ -361,9 +362,8 @@
+ 		proc_entry.mpc_apicver = 0x10;	/* integrated APIC */
+ 		MP_processor_info(&proc_entry);
+ 	} else {
+-		printk(" disabled");
++		printk(" disabled\n");
+ 	}
+-	printk("\n");
+ 
+ 	total_cpus++;
+ 	return;
+diff -Nru a/arch/i386/kernel/acpitable.h b/arch/i386/kernel/acpitable.h
+--- a/arch/i386/kernel/acpitable.h	Thu Aug 21 22:18:44 2003
++++ b/arch/i386/kernel/acpitable.h	Thu Aug 21 22:18:44 2003
+@@ -39,7 +39,9 @@
+ #ifndef _HEADER_ACPITABLE_H_
+ #define _HEADER_ACPITABLE_H_
+ 
+-#define dprintk printk
++//#define dprintk(s, args...) printk(s, ## args)
++#define dprintk(s, args...)
++
+ typedef unsigned int ACPI_TBLPTR;
+ 
+ typedef struct {		/* ACPI common table header */
+diff -Nru a/arch/i386/kernel/dmi_scan.c b/arch/i386/kernel/dmi_scan.c
+--- a/arch/i386/kernel/dmi_scan.c	Thu Aug 21 22:18:44 2003
++++ b/arch/i386/kernel/dmi_scan.c	Thu Aug 21 22:18:44 2003
+@@ -23,8 +23,11 @@
+ 	u16	handle;
+ };
+ 
++#ifdef DMI_DEBUG
++#define dmi_printk(x) printk x
++#else
+ #define dmi_printk(x)
+-//#define dmi_printk(x) printk x
++#endif
+ 
+ static char * __init dmi_string(struct dmi_header *dm, u8 s)
+ {
+@@ -440,7 +443,6 @@
+  * The MP1.4 table is right however and so SMP kernels tend to work. 
+  */
+  
+-extern int skip_ioapic_setup;
+ #ifdef CONFIG_PCI
+ extern int broken_440gx_bios;
+ extern unsigned int pci_probe;
+@@ -453,13 +455,26 @@
+ 	printk(KERN_INFO " *** contact your hardware vendor and ask about updates.\n");
+ 	printk(KERN_INFO " *** Building an SMP kernel may evade the bug some of the time.\n");
+ #ifdef CONFIG_X86_IO_APIC
+-	skip_ioapic_setup = 0;
++	{
++		extern int skip_ioapic_setup; 
++		skip_ioapic_setup = 0;
++	}
+ #endif
+ #ifdef CONFIG_PCI
+ 	broken_440gx_bios = 1;
+ 	pci_probe |= PCI_BIOS_IRQ_SCAN;
+ #endif
+-	
++	return 0;
++}
++
++/*
++ * ASUS K7V-RM has broken ACPI table defining sleep modes
++ */
++
++static __init int broken_acpi_Sx(struct dmi_blacklist *d)
++{
++	printk(KERN_WARNING "Detected ASUS mainboard with broken ACPI sleep table\n");
++	dmi_broken |= BROKEN_ACPI_Sx;
+ 	return 0;
+ }
+ 
+@@ -532,6 +547,47 @@
+ 	return 0;
+ }
+ 
++
++#ifdef	CONFIG_ACPI_BOOT
++extern int acpi_disabled, use_acpi_pci, acpi_force, acpi_ht;
++
++static __init __attribute__((unused)) int acpi_disable(struct dmi_blacklist *d) 
++{ 
++	if (!acpi_force) { 
++		printk(KERN_NOTICE "%s detected: acpi off\n",d->ident); 
++		acpi_disabled = 1;
++	} else { 
++		printk(KERN_NOTICE 
++		       "Warning: DMI blacklist says broken, but acpi forced\n"); 
++	}
++	return 0;
++} 
++
++
++/*
++ * Limit ACPI to CPU enumeration for HT
++ */
++static __init __attribute__((unused)) int force_acpi_ht(struct dmi_blacklist *d) 
++{ 
++	if (!acpi_force) { 
++		printk(KERN_NOTICE "%s detected: force use of acpi=ht\n", d->ident); 
++		acpi_disabled = 1; 
++		acpi_ht = 1; 
++	} else { 
++		printk(KERN_NOTICE 
++		       "Warning: acpi=force overrules DMI blacklist: acpi=ht\n"); 
++	}
++	return 0;
++} 
++
++static __init int disable_acpi_pci(struct dmi_blacklist *d) 
++{ 
++	printk(KERN_NOTICE "%s detected: force use of pci=noacpi\n", d->ident); 	
++	use_acpi_pci = 0; 
++	return 0;
++} 
++#endif
++
+ /*
+  *	Process the DMI blacklists
+  */
+@@ -625,6 +681,11 @@
+ 			MATCH(DMI_PRODUCT_NAME, "L8400K series Notebook PC"),
+ 			NO_MATCH, NO_MATCH
+ 			} },					
++	{ apm_is_horked, "ABIT KX7-333[R]", { /* APM blows on shutdown */
++			MATCH(DMI_BOARD_VENDOR, "ABIT"),
++			MATCH(DMI_BOARD_NAME, "VT8367-8233A (KX7-333[R])"),
++			NO_MATCH, NO_MATCH,
++			} },
+ 	{ apm_is_horked, "Trigem Delhi3", { /* APM crashes */
+ 			MATCH(DMI_SYS_VENDOR, "TriGem Computer, Inc"),
+ 			MATCH(DMI_PRODUCT_NAME, "Delhi3"),
+@@ -870,6 +931,12 @@
+ 			NO_MATCH, NO_MATCH, NO_MATCH
+ 			} },
+ 			
++	{ broken_acpi_Sx, "ASUS K7V-RM", {		/* Bad ACPI Sx table */
++			MATCH(DMI_BIOS_VERSION,"ASUS K7V-RM ACPI BIOS Revision 1003A"),
++			MATCH(DMI_BOARD_NAME, "<K7V-RM>"),
++			NO_MATCH, NO_MATCH
++			} },
++			
+ 	{ init_ints_after_s1, "Toshiba Satellite 4030cdt", { /* Reinitialization of 8259 is needed after S1 resume */
+ 			MATCH(DMI_PRODUCT_NAME, "S4030CDT/4.3"),
+ 			NO_MATCH, NO_MATCH, NO_MATCH
+@@ -897,6 +964,115 @@
+ 			NO_MATCH, NO_MATCH, NO_MATCH
+ 			} },
+ 
++#ifdef	CONFIG_ACPI_BOOT
++	/*
++	 * If your system is blacklisted here, but you find that acpi=force
++	 * works for you, please contact acpi-devel@sourceforge.net
++	 */
++
++	/*
++	 *	Boxes that need ACPI disabled
++	 */
++
++	{ acpi_disable, "IBM Thinkpad", {
++			MATCH(DMI_BOARD_VENDOR, "IBM"),
++			MATCH(DMI_BOARD_NAME, "2629H1G"),
++			NO_MATCH, NO_MATCH }},
++
++	/*
++	 *	Boxes that need acpi=ht 
++	 */
++
++	{ force_acpi_ht, "FSC Primergy T850", {
++			MATCH(DMI_SYS_VENDOR, "FUJITSU SIEMENS"),
++			MATCH(DMI_PRODUCT_NAME, "PRIMERGY T850"),
++			NO_MATCH, NO_MATCH }},
++
++	{ force_acpi_ht, "DELL GX240", {
++			MATCH(DMI_BOARD_VENDOR, "Dell Computer Corporation"),
++			MATCH(DMI_BOARD_NAME, "OptiPlex GX240"),
++			NO_MATCH, NO_MATCH }},
++
++	{ force_acpi_ht, "HP VISUALIZE NT Workstation", {
++			MATCH(DMI_BOARD_VENDOR, "Hewlett-Packard"),
++			MATCH(DMI_PRODUCT_NAME, "HP VISUALIZE NT Workstation"),
++			NO_MATCH, NO_MATCH }},
++
++	{ force_acpi_ht, "Compaq ProLiant DL380 G2", {
++			MATCH(DMI_SYS_VENDOR, "Compaq"),
++			MATCH(DMI_PRODUCT_NAME, "ProLiant DL380 G2"),
++			NO_MATCH, NO_MATCH }},
++
++	{ force_acpi_ht, "Compaq ProLiant ML530 G2", {
++			MATCH(DMI_SYS_VENDOR, "Compaq"),
++			MATCH(DMI_PRODUCT_NAME, "ProLiant ML530 G2"),
++			NO_MATCH, NO_MATCH }},
++
++	{ force_acpi_ht, "Compaq ProLiant ML350 G3", {
++			MATCH(DMI_SYS_VENDOR, "Compaq"),
++			MATCH(DMI_PRODUCT_NAME, "ProLiant ML350 G3"),
++			NO_MATCH, NO_MATCH }},
++
++	{ force_acpi_ht, "Compaq Workstation W8000", {
++			MATCH(DMI_SYS_VENDOR, "Compaq"),
++			MATCH(DMI_PRODUCT_NAME, "Workstation W8000"),
++			NO_MATCH, NO_MATCH }},
++
++	{ force_acpi_ht, "ASUS P4B266", {
++			MATCH(DMI_BOARD_VENDOR, "ASUSTeK Computer INC."),
++			MATCH(DMI_BOARD_NAME, "P4B266"),
++			NO_MATCH, NO_MATCH }},
++
++	{ force_acpi_ht, "ASUS P2B-DS", {
++			MATCH(DMI_BOARD_VENDOR, "ASUSTeK Computer INC."),
++			MATCH(DMI_BOARD_NAME, "P2B-DS"),
++			NO_MATCH, NO_MATCH }},
++
++	{ force_acpi_ht, "ASUS CUR-DLS", {
++			MATCH(DMI_BOARD_VENDOR, "ASUSTeK Computer INC."),
++			MATCH(DMI_BOARD_NAME, "CUR-DLS"),
++			NO_MATCH, NO_MATCH }},
++
++	{ force_acpi_ht, "ASUS A7V", {
++			MATCH(DMI_BOARD_VENDOR, "ASUSTeK Computer INC"),
++			MATCH(DMI_BOARD_NAME, "<A7V>"),
++			MATCH(DMI_BIOS_VERSION, "ASUS A7V ACPI BIOS Revision 1011"), NO_MATCH }},
++
++	{ force_acpi_ht, "ABIT i440BX-W83977", {
++			MATCH(DMI_BOARD_VENDOR, "ABIT <http://www.abit.com>"),
++			MATCH(DMI_BOARD_NAME, "i440BX-W83977 (BP6)"),
++			NO_MATCH, NO_MATCH }},
++
++	{ force_acpi_ht, "IBM Bladecenter", {
++			MATCH(DMI_BOARD_VENDOR, "IBM"),
++			MATCH(DMI_BOARD_NAME, "IBM eServer BladeCenter HS20"),
++			NO_MATCH, NO_MATCH }},
++
++	{ force_acpi_ht, "IBM eServer xSeries 360", {
++			MATCH(DMI_BOARD_VENDOR, "IBM"),
++			MATCH(DMI_BOARD_NAME, "eServer xSeries 360"),
++			NO_MATCH, NO_MATCH }},
++
++	{ force_acpi_ht, "IBM eserver xSeries 330", {
++			MATCH(DMI_BOARD_VENDOR, "IBM"),
++			MATCH(DMI_BOARD_NAME, "eserver xSeries 330"),
++			NO_MATCH, NO_MATCH }},
++
++	{ force_acpi_ht, "IBM eserver xSeries 440", {
++			MATCH(DMI_BOARD_VENDOR, "IBM"),
++			MATCH(DMI_PRODUCT_NAME, "eserver xSeries 440"),
++			NO_MATCH, NO_MATCH }},
++
++	/*
++	 *	Boxes that need ACPI PCI IRQ routing disabled
++	 */
++
++	{ disable_acpi_pci, "ASUS A7V", {
++			MATCH(DMI_BOARD_VENDOR, "ASUSTeK Computer INC"),
++			MATCH(DMI_BOARD_NAME, "<A7V>"),
++			MATCH(DMI_BIOS_VERSION, "ASUS A7V ACPI BIOS Revision 1007"), NO_MATCH }},
++#endif	// CONFIG_ACPI_BOOT
++
+ 	{ NULL, }
+ };
+ 	
+@@ -906,11 +1082,34 @@
+  *	returns 1 or we hit the end.
+  */
+  
++
+ static __init void dmi_check_blacklist(void)
+ {
+ 	struct dmi_blacklist *d;
+ 	int i;
+ 		
++#ifdef  CONFIG_ACPI_BOOT
++#define	ACPI_BLACKLIST_CUTOFF_YEAR	2001
++
++	if (dmi_ident[DMI_BIOS_DATE]) { 
++		char *s = strrchr(dmi_ident[DMI_BIOS_DATE], '/'); 
++		if (s) { 
++			int year, disable = 0;
++			s++; 
++			year = simple_strtoul(s,NULL,0); 
++			if (year >= 1000) 
++				disable = year < ACPI_BLACKLIST_CUTOFF_YEAR; 
++			else if (year < 1 || (year > 90 && year <= 99))
++				disable = 1; 
++			if (disable && !acpi_force) { 
++				printk(KERN_NOTICE "ACPI disabled because your bios is from %s and too old\n", s);
++				printk(KERN_NOTICE "You can enable it with acpi=force\n");
++				acpi_disabled = 1; 
++			} 
++		}
++	}
++#endif
++
+ 	d=&dmi_blacklist[0];
+ 	while(d->callback)
+ 	{
+@@ -941,8 +1140,9 @@
+ 
+ static void __init dmi_decode(struct dmi_header *dm)
+ {
++#ifdef	DMI_DEBUG
+ 	u8 *data = (u8 *)dm;
+-	
++#endif
+ 	switch(dm->type)
+ 	{
+ 		case  0:
+@@ -988,4 +1188,7 @@
+ 	int err = dmi_iterate(dmi_decode);
+ 	if(err == 0)
+ 		dmi_check_blacklist();
++	else
++		printk(KERN_INFO "DMI not present.\n");
+ }
++
+diff -Nru a/arch/i386/kernel/io_apic.c b/arch/i386/kernel/io_apic.c
+--- a/arch/i386/kernel/io_apic.c	Thu Aug 21 22:18:44 2003
++++ b/arch/i386/kernel/io_apic.c	Thu Aug 21 22:18:44 2003
+@@ -1825,7 +1825,7 @@
+ }
+ 
+ 
+-int io_apic_set_pci_routing (int ioapic, int pin, int irq)
++int io_apic_set_pci_routing (int ioapic, int pin, int irq, int edge_level, int active_high_low)
+ {
+ 	struct IO_APIC_route_entry entry;
+ 	unsigned long flags;
+@@ -1848,18 +1848,22 @@
+ 	entry.dest_mode = INT_DELIVERY_MODE;
+ 	entry.dest.logical.logical_dest = target_cpus();
+ 	entry.mask = 1;					 /* Disabled (masked) */
+-	entry.trigger = 1;				   /* Level sensitive */
+-	entry.polarity = 1;					/* Low active */
++	entry.trigger = edge_level;
++	entry.polarity = active_high_low;
+ 
+ 	add_pin_to_irq(irq, ioapic, pin);
+ 
+ 	entry.vector = assign_irq_vector(irq);
+ 
+ 	printk(KERN_DEBUG "IOAPIC[%d]: Set PCI routing entry (%d-%d -> 0x%x -> "
+-		"IRQ %d)\n", ioapic, 
+-		mp_ioapics[ioapic].mpc_apicid, pin, entry.vector, irq);
++		"IRQ %d Mode:%i Active:%i)\n", ioapic,
++		mp_ioapics[ioapic].mpc_apicid, pin, entry.vector, irq, edge_level, active_high_low);
+ 
++	if (edge_level) {
+ 	irq_desc[irq].handler = &ioapic_level_irq_type;
++	} else {
++		irq_desc[irq].handler = &ioapic_edge_irq_type;
++	}
+ 
+ 	set_intr_gate(entry.vector, interrupt[irq]);
+ 
+diff -Nru a/arch/i386/kernel/mpparse.c b/arch/i386/kernel/mpparse.c
+--- a/arch/i386/kernel/mpparse.c	Thu Aug 21 22:18:44 2003
++++ b/arch/i386/kernel/mpparse.c	Thu Aug 21 22:18:44 2003
+@@ -989,7 +989,7 @@
+ 	MP_processor_info(&processor);
+ }
+ 
+-#ifdef CONFIG_X86_IO_APIC
++#if defined(CONFIG_X86_IO_APIC) && defined(CONFIG_ACPI_INTERPRETER)
+ 
+ #define MP_ISA_BUS		0
+ #define MP_MAX_IOAPIC_PIN	127
+@@ -1152,7 +1152,8 @@
+ 	mp_bus_id_to_local = (int *)&bus_data[(MAX_MP_BUSSES * sizeof(int)) * 2];
+ 	mp_bus_id_to_pci_bus = (int *)&bus_data[(MAX_MP_BUSSES * sizeof(int)) * 3];
+ 	mp_irqs = (struct mpc_config_intsrc *)&bus_data[(MAX_MP_BUSSES * sizeof(int)) * 4];
+-	memset(mp_bus_id_to_pci_bus, -1, MAX_MP_BUSSES);
++	for (i = 0; i < MAX_MP_BUSSES; ++i)
++	  mp_bus_id_to_pci_bus[i] = -1;
+ 
+ 	/* 
+ 	 * Fabricate the legacy ISA bus (bus #31).
+@@ -1249,7 +1250,7 @@
+ 
+ 	ioapic_pin = irq - mp_ioapic_routing[ioapic].irq_start;
+ 
+-	io_apic_set_pci_routing(ioapic, ioapic_pin, irq);
++	io_apic_set_pci_routing(ioapic, ioapic_pin, irq, 1, 1); // Active low, level triggered
+ }
+ 
+ 
+@@ -1263,6 +1264,8 @@
+ 	int			ioapic_pin = 0;
+ 	int			irq = 0;
+ 	int			idx, bit = 0;
++	int			edge_level = 0;
++	int			active_high_low = 0;
+ 
+ 	/*
+ 	 * Parsing through the PCI Interrupt Routing Table (PRT) and program
+@@ -1273,12 +1276,16 @@
+ 
+ 		/* Need to get irq for dynamic entry */
+ 		if (entry->link.handle) {
+-			irq = acpi_pci_link_get_irq(entry->link.handle, entry->link.index);
++			irq = acpi_pci_link_get_irq(entry->link.handle, entry->link.index, &edge_level, &active_high_low);
+ 			if (!irq)
+ 				continue;
+ 		}
+-		else
++		else {
++			/* Hardwired IRQ. Assume PCI standard settings */
+ 			irq = entry->link.index;
++			edge_level = 1;
++			active_high_low = 1;
++		}
+ 
+ 		/* Don't set up the ACPI SCI because it's already set up */
+ 		if (acpi_fadt.sci_int == irq)
+@@ -1311,7 +1318,7 @@
+ 
+ 		mp_ioapic_routing[ioapic].pin_programmed[idx] |= (1<<bit);
+ 
+-		if (!io_apic_set_pci_routing(ioapic, ioapic_pin, irq))
++		if (!io_apic_set_pci_routing(ioapic, ioapic_pin, irq, edge_level, active_high_low))
+ 			entry->irq = irq;
+ 
+ 		printk(KERN_DEBUG "%02x:%02x:%02x[%c] -> %d-%d -> IRQ %d\n",
+@@ -1326,6 +1333,6 @@
+ 
+ #endif /*CONFIG_ACPI_PCI*/
+ 
+-#endif /*CONFIG_X86_IO_APIC*/
++#endif /*CONFIG_X86_IO_APIC && CONFIG_ACPI_INTERPRETER*/
+ 
+-#endif /*CONFIG_ACPI_BOOT*/
++#endif /*CONFIG_ACPI*/
+diff -Nru a/arch/i386/kernel/setup.c b/arch/i386/kernel/setup.c
+--- a/arch/i386/kernel/setup.c	Thu Aug 21 22:18:44 2003
++++ b/arch/i386/kernel/setup.c	Thu Aug 21 22:18:44 2003
+@@ -173,16 +173,22 @@
+ static int have_cpuid_p(void) __init;
+ 
+ static int disable_x86_serial_nr __initdata = 1;
+-static int disable_x86_ht __initdata = 0;
+ static u32 disabled_x86_caps[NCAPINTS] __initdata = { 0 };
+ 
+-#ifdef CONFIG_ACPI_HT_ONLY
+-int acpi_disabled = 1;
++#ifdef	CONFIG_ACPI_INTERPRETER
++	int acpi_disabled __initdata = 0;
+ #else
+-int acpi_disabled = 0;
++	int acpi_disabled __initdata = 1;
+ #endif
+ EXPORT_SYMBOL(acpi_disabled);
+ 
++#ifdef	CONFIG_ACPI_BOOT
++	int acpi_ht __initdata = 1; 	/* enable HT */
++#endif
++
++
++int acpi_force __initdata = 0;
++
+ extern int blk_nohighio;
+ 
+ /*
+@@ -804,20 +810,30 @@
+ 			}
+ 		}
+ 
+-		/* "noht" disables HyperThreading (2 logical cpus per Xeon) */
+-		else if (!memcmp(from, "noht", 4)) { 
+-			disable_x86_ht = 1;
+-			set_bit(X86_FEATURE_HT, disabled_x86_caps);
+-		}
+-
+-		/* "acpi=off" disables both ACPI table parsing and interpreter init */
+-		else if (!memcmp(from, "acpi=off", 8))
++#ifdef CONFIG_ACPI_BOOT
++		/* "acpi=off" disables both ACPI table parsing and interpreter */
++		else if (!memcmp(from, "acpi=off", 8)) {
++			acpi_ht = 0;
+ 			acpi_disabled = 1;
++		}
+ 
+-		/* "acpismp=force" turns on ACPI again */
+-		else if (!memcmp(from, "acpismp=force", 13))
++		/* acpi=force to over-ride black-list */
++		else if (!memcmp(from, "acpi=force", 10)) { 
++			acpi_force = 1;
++			acpi_ht=1;
+ 			acpi_disabled = 0;
++		} 
+ 
++		/* Limit ACPI to boot-time only, still enabled HT */
++		else if (!memcmp(from, "acpi=ht", 7)) { 
++			acpi_ht = 1; 
++			if (!acpi_force) acpi_disabled = 1; 
++		} 
++
++                /* disable IO-APIC */
++                else if (!memcmp(from, "noapic", 6))
++                        disable_ioapic_setup();
++#endif
+ 		/*
+ 		 * highmem=size forces highmem to be exactly 'size' bytes.
+ 		 * This works even on boxes that have no highmem otherwise.
+@@ -1152,11 +1168,6 @@
+ 
+ 	max_low_pfn = setup_memory();
+ 
+-	if (disable_x86_ht) {
+-		clear_bit(X86_FEATURE_HT, &boot_cpu_data.x86_capability[0]);
+-		set_bit(X86_FEATURE_HT, disabled_x86_caps);
+-	}
+-
+ 	/*
+ 	 * NOTE: before this point _nobody_ is allowed to allocate
+ 	 * any memory using the bootmem allocator.
+@@ -1166,13 +1177,14 @@
+ 	smp_alloc_memory(); /* AP processor realmode stacks in low memory*/
+ #endif
+ 	paging_init();
+-#ifdef CONFIG_ACPI
++
++	dmi_scan_machine();
++
+ 	/*
+ 	 * Parse the ACPI tables for possible boot-time SMP configuration.
+ 	 */
+-	if (!acpi_disabled)
+-		acpi_boot_init();
+-#endif
++	acpi_boot_init();
++
+ #ifdef CONFIG_X86_LOCAL_APIC
+ 	/*
+ 	 * get boot-time SMP configuration:
+@@ -1190,7 +1202,6 @@
+ 	conswitchp = &dummy_con;
+ #endif
+ #endif
+-	dmi_scan_machine();
+ }
+ 
+ static int cachesize_override __initdata = -1;
+@@ -2406,7 +2417,7 @@
+ 		strcpy(c->x86_model_id, p);
+ 	
+ #ifdef CONFIG_SMP
+-	if (test_bit(X86_FEATURE_HT, &c->x86_capability) && !disable_x86_ht) {
++	if (test_bit(X86_FEATURE_HT, &c->x86_capability)) {
+ 		extern	int phys_proc_id[NR_CPUS];
+ 		
+ 		u32 	eax, ebx, ecx, edx;
+diff -Nru a/arch/i386/kernel/smpboot.c b/arch/i386/kernel/smpboot.c
+--- a/arch/i386/kernel/smpboot.c	Thu Aug 21 22:18:44 2003
++++ b/arch/i386/kernel/smpboot.c	Thu Aug 21 22:18:44 2003
+@@ -1034,7 +1034,7 @@
+ 	 * If we couldnt find an SMP configuration at boot time,
+ 	 * get out of here now!
+ 	 */
+-	if (!smp_found_config) {
++	if (!smp_found_config && !acpi_lapic) {
+ 		printk(KERN_NOTICE "SMP motherboard not detected.\n");
+ #ifndef CONFIG_VISWS
+ 		io_apic_irqs = 0;
+diff -Nru a/drivers/Makefile b/drivers/Makefile
+--- a/drivers/Makefile	Thu Aug 21 22:18:44 2003
++++ b/drivers/Makefile	Thu Aug 21 22:18:44 2003
+@@ -45,7 +45,7 @@
+ # CONFIG_HAMRADIO can be set without CONFIG_NETDEVICE being set  -- ch
+ subdir-$(CONFIG_HAMRADIO)	+= net/hamradio
+ subdir-$(CONFIG_I2C)		+= i2c
+-subdir-$(CONFIG_ACPI)		+= acpi
++subdir-$(CONFIG_ACPI_BOOT)	+= acpi
+ 
+ subdir-$(CONFIG_BLUEZ)		+= bluetooth
+ 
+diff -Nru a/drivers/acpi/Config.in b/drivers/acpi/Config.in
+--- a/drivers/acpi/Config.in	Thu Aug 21 22:18:44 2003
++++ b/drivers/acpi/Config.in	Thu Aug 21 22:18:44 2003
+@@ -8,7 +8,7 @@
+   comment 'ACPI Support'
+   bool         'ACPI Support' CONFIG_ACPI
+   if [ "$CONFIG_ACPI" = "y" ]; then
+-    if [ "$CONFIG_X86_LOCAL_APIC" = "y" ]; then
++    if [ "$CONFIG_SMP" = "y" ]; then
+       bool         'CPU Enumeration Only' CONFIG_ACPI_HT_ONLY
+     else
+       define_bool CONFIG_ACPI_HT_ONLY n
+diff -Nru a/drivers/acpi/Makefile b/drivers/acpi/Makefile
+--- a/drivers/acpi/Makefile	Thu Aug 21 22:18:44 2003
++++ b/drivers/acpi/Makefile	Thu Aug 21 22:18:44 2003
+@@ -16,14 +16,13 @@
+ 
+ export-objs 	:= acpi_ksyms.o processor.o
+ 
+-obj-y		:= acpi_ksyms.o 
++obj-$(CONFIG_ACPI)	:= acpi_ksyms.o 
+ 
+ #
+ # ACPI Boot-Time Table Parsing
+ #
+-ifeq ($(CONFIG_ACPI_BOOT),y)
+-  obj-y		+= tables.o blacklist.o
+-endif
++obj-$(CONFIG_ACPI_BOOT)		+= tables.o
++obj-$(CONFIG_ACPI_INTERPRETER)	+= blacklist.o
+ 
+ #
+ # ACPI Core Subsystem (Interpreter)
+diff -Nru a/drivers/acpi/bus.c b/drivers/acpi/bus.c
+--- a/drivers/acpi/bus.c	Thu Aug 21 22:18:44 2003
++++ b/drivers/acpi/bus.c	Thu Aug 21 22:18:44 2003
+@@ -2037,7 +2037,7 @@
+ 	acpi_set_debug(ACPI_DEBUG_LOW);
+ 
+ 	if (acpi_disabled) {
+-		printk(KERN_INFO PREFIX "Disabled via command line (acpi=off)\n");
++		printk(KERN_INFO PREFIX "Interpreter disabled.\n");
+ 		return -ENODEV;
+ 	}
+ 
+diff -Nru a/drivers/acpi/executer/exutils.c b/drivers/acpi/executer/exutils.c
+--- a/drivers/acpi/executer/exutils.c	Thu Aug 21 22:18:44 2003
++++ b/drivers/acpi/executer/exutils.c	Thu Aug 21 22:18:44 2003
+@@ -290,7 +290,7 @@
+ 	 * acpi_integer is unsigned, so we don't worry about a '-'
+ 	 */
+ 	if ((current_value = value) == 0) {
+-	    return_VALUE (1);
++		return_VALUE (1);
+ 	}
+ 
+ 	num_digits = 0;
+diff -Nru a/drivers/acpi/hardware/hwregs.c b/drivers/acpi/hardware/hwregs.c
+--- a/drivers/acpi/hardware/hwregs.c	Thu Aug 21 22:18:44 2003
++++ b/drivers/acpi/hardware/hwregs.c	Thu Aug 21 22:18:44 2003
+@@ -357,9 +357,9 @@
+ 
+ 	/*
+ 	 * Decode the Register ID
+-	 * Register id = Register block id | bit id
++	 * Register ID = [Register block ID] | [bit ID]
+ 	 *
+-	 * Check bit id to fine locate Register offset.
++	 * Check bit ID to fine locate Register offset.
+ 	 * Check Mask to determine Register offset, and then read-write.
+ 	 */
+ 	switch (bit_reg_info->parent_register) {
+@@ -367,9 +367,9 @@
+ 
+ 		/*
+ 		 * Status Registers are different from the rest.  Clear by
+-		 * writing 1, writing 0 has no effect.  So, the only relevant
++		 * writing 1, and writing 0 has no effect.  So, the only relevant
+ 		 * information is the single bit we're interested in, all others should
+-		 * be written as 0 so they will be left unchanged
++		 * be written as 0 so they will be left unchanged.
+ 		 */
+ 		value = ACPI_REGISTER_PREPARE_BITS (value,
+ 				 bit_reg_info->bit_position, bit_reg_info->access_bit_mask);
+@@ -394,17 +394,17 @@
+ 	case ACPI_REGISTER_PM1_CONTROL:
+ 
+ 		/*
+-		 * Read the PM1 Control register.
++		 * Write the PM1 Control register.
+ 		 * Note that at this level, the fact that there are actually TWO
+-		 * registers (A and B - and that B may not exist) is abstracted.
++		 * registers (A and B - and B may not exist) is abstracted.
+ 		 */
+ 		ACPI_DEBUG_PRINT ((ACPI_DB_IO, "PM1 control: Read %X\n", register_value));
+ 
+ 		ACPI_REGISTER_INSERT_VALUE (register_value, bit_reg_info->bit_position,
+ 				bit_reg_info->access_bit_mask, value);
+ 
+-		status = acpi_hw_register_write (ACPI_MTX_DO_NOT_LOCK, register_id,
+-				(u16) register_value);
++		status = acpi_hw_register_write (ACPI_MTX_DO_NOT_LOCK,
++				  ACPI_REGISTER_PM1_CONTROL, (u16) register_value);
+ 		break;
+ 
+ 
+@@ -724,7 +724,7 @@
+ 
+ 	/*
+ 	 * Three address spaces supported:
+-	 * Memory, Io, or PCI config.
++	 * Memory, IO, or PCI_Config.
+ 	 */
+ 	switch (reg->address_space_id) {
+ 	case ACPI_ADR_SPACE_SYSTEM_MEMORY:
+@@ -808,9 +808,10 @@
+ 		(!reg->address)) {
+ 		return (AE_OK);
+ 	}
++
+ 	/*
+ 	 * Three address spaces supported:
+-	 * Memory, Io, or PCI config.
++	 * Memory, IO, or PCI_Config.
+ 	 */
+ 	switch (reg->address_space_id) {
+ 	case ACPI_ADR_SPACE_SYSTEM_MEMORY:
+diff -Nru a/drivers/acpi/osl.c b/drivers/acpi/osl.c
+--- a/drivers/acpi/osl.c	Thu Aug 21 22:18:44 2003
++++ b/drivers/acpi/osl.c	Thu Aug 21 22:18:44 2003
+@@ -34,6 +34,7 @@
+ #include <linux/kmod.h>
+ #include <linux/delay.h>
+ #include <linux/init.h>
++#include <linux/nmi.h>
+ #include <asm/io.h>
+ #include <acpi/acpi_bus.h>
+ #include <acpi/acpi.h>
+@@ -251,7 +252,12 @@
+ 	irq = acpi_fadt.sci_int;
+ 
+ #ifdef CONFIG_IA64
+-	irq = gsi_to_vector(irq);
++	irq = acpi_irq_to_vector(irq);
++	if (irq < 0) {
++		printk(KERN_ERR PREFIX "SCI (ACPI interrupt %d) not registered\n",
++		       acpi_fadt.sci_int);
++		return AE_OK;
++	}
+ #endif
+ 	acpi_irq_irq = irq;
+ 	acpi_irq_handler = handler;
+@@ -269,7 +275,7 @@
+ {
+ 	if (acpi_irq_handler) {
+ #ifdef CONFIG_IA64
+-		irq = gsi_to_vector(irq);
++		irq = acpi_irq_to_vector(irq);
+ #endif
+ 		free_irq(irq, acpi_irq);
+ 		acpi_irq_handler = NULL;
+@@ -292,11 +298,14 @@
+ void
+ acpi_os_stall(u32 us)
+ {
+-	if (us > 10000) {
+-		mdelay(us / 1000);
+-	}
+-	else {
+-		udelay(us);
++	while (us) {
++		u32 delay = 1000;
++
++		if (delay > us)
++			delay = us;
++		udelay(delay);
++		touch_nmi_watchdog();
++		us -= delay;
+ 	}
+ }
+ 
+@@ -728,7 +737,7 @@
+ 	if (flags & ACPI_NOT_ISR)
+ 		ACPI_DISABLE_IRQS();
+ 
+-	spin_lock(handle);
++	spin_lock((spinlock_t *)handle);
+ 
+ 	return_VOID;
+ }
+@@ -747,7 +756,7 @@
+ 	ACPI_DEBUG_PRINT ((ACPI_DB_MUTEX, "Releasing spinlock[%p] from %s level\n", handle,
+ 		((flags & ACPI_NOT_ISR) ? "non-interrupt" : "interrupt")));
+ 
+-	spin_unlock(handle);
++	spin_unlock((spinlock_t *)handle);
+ 
+ 	if (flags & ACPI_NOT_ISR)
+ 		ACPI_ENABLE_IRQS();
+diff -Nru a/drivers/acpi/pci_irq.c b/drivers/acpi/pci_irq.c
+--- a/drivers/acpi/pci_irq.c	Thu Aug 21 22:18:44 2003
++++ b/drivers/acpi/pci_irq.c	Thu Aug 21 22:18:44 2003
+@@ -24,6 +24,8 @@
+  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  */
+ 
++#include <linux/config.h>
++
+ #include <linux/kernel.h>
+ #include <linux/module.h>
+ #include <linux/init.h>
+@@ -36,6 +38,9 @@
+ #ifdef CONFIG_X86_IO_APIC
+ #include <asm/mpspec.h>
+ #endif
++#ifdef CONFIG_IOSAPIC
++# include <asm/iosapic.h>
++#endif
+ #include <acpi/acpi_bus.h>
+ #include <acpi/acpi_drivers.h>
+ 
+@@ -253,7 +258,7 @@
+ 	}
+ 
+ 	if (!entry->irq && entry->link.handle) {
+-		entry->irq = acpi_pci_link_get_irq(entry->link.handle, entry->link.index);
++		entry->irq = acpi_pci_link_get_irq(entry->link.handle, entry->link.index, NULL, NULL);
+ 		if (!entry->irq) {
+ 			ACPI_DEBUG_PRINT((ACPI_DB_WARN, "Invalid IRQ link routing entry\n"));
+ 			return_VALUE(0);
+@@ -373,6 +378,10 @@
+ 		eisa_set_level_irq(dev->irq);
+ 	}
+ #endif
++#ifdef CONFIG_IOSAPIC
++	if (acpi_irq_model == ACPI_IRQ_MODEL_IOSAPIC)
++		iosapic_enable_intr(dev->irq);
++#endif
+ 
+ 	return_VALUE(dev->irq);
+ }
+@@ -392,7 +401,9 @@
+ 	}
+ 
+ 	/* Make sure all link devices have a valid IRQ. */
+-	acpi_pci_link_check();
++	if (acpi_pci_link_check()) {
++		return_VALUE(-ENODEV);
++	}
+ 
+ #ifdef CONFIG_X86_IO_APIC
+ 	/* Program IOAPICs using data from PRT entries. */
+diff -Nru a/drivers/acpi/pci_link.c b/drivers/acpi/pci_link.c
+--- a/drivers/acpi/pci_link.c	Thu Aug 21 22:18:44 2003
++++ b/drivers/acpi/pci_link.c	Thu Aug 21 22:18:44 2003
+@@ -65,6 +65,9 @@
+ 
+ struct acpi_pci_link_irq {
+ 	u8			active;			/* Current IRQ */
++	u8			edge_level;		/* All IRQs */
++	u8			active_high_low;	/* All IRQs */
++	u8			setonboot;
+ 	u8			possible_count;
+ 	u8			possible[ACPI_PCI_LINK_MAX_POSSIBLE];
+ };
+@@ -114,6 +117,8 @@
+ 			link->irq.possible[i] = p->interrupts[i];
+ 			link->irq.possible_count++;
+ 		}
++		link->irq.edge_level = p->edge_level;
++		link->irq.active_high_low = p->active_high_low;
+ 		break;
+ 	}
+ 	case ACPI_RSTYPE_EXT_IRQ:
+@@ -132,6 +137,8 @@
+ 			link->irq.possible[i] = p->interrupts[i];
+ 			link->irq.possible_count++;
+ 		}
++		link->irq.edge_level = p->edge_level;
++		link->irq.active_high_low = p->active_high_low;
+ 		break;
+ 	}
+ 	default:
+@@ -260,7 +267,6 @@
+ 	 * IRQ a boot-enabled Link device is set to is the correct one.
+ 	 * (Required to support systems such as the Toshiba 5005-S504.)
+ 	 */
+-
+ 	link->irq.active = irq;
+ 
+ 	ACPI_DEBUG_PRINT((ACPI_DB_INFO, "Link at IRQ %d \n", link->irq.active));
+@@ -290,28 +296,33 @@
+ 	if (!link || !irq)
+ 		return_VALUE(-EINVAL);
+ 
+-	/* See if we're already at the target IRQ. */
+-	if (irq == link->irq.active)
+-		return_VALUE(0);
+-
+-	/* Make sure the target IRQ in the list of possible IRQs. */
+-	for (i=0; i<link->irq.possible_count; i++) {
+-		if (irq == link->irq.possible[i])
+-			valid = 1;
+-	}
+-	if (!valid) {
+-		ACPI_DEBUG_PRINT((ACPI_DB_ERROR, "Target IRQ %d invalid\n", irq));
+-		return_VALUE(-EINVAL);
++	/* We don't check irqs the first time around */
++	if (link->irq.setonboot) {
++		/* See if we're already at the target IRQ. */
++		if (irq == link->irq.active)
++			return_VALUE(0);
++
++		/* Make sure the target IRQ in the list of possible IRQs. */
++		for (i=0; i<link->irq.possible_count; i++) {
++			if (irq == link->irq.possible[i])
++				valid = 1;
++		}
++		if (!valid) {
++			ACPI_DEBUG_PRINT((ACPI_DB_ERROR, "Target IRQ %d invalid\n", irq));
++			return_VALUE(-EINVAL);
++		}
+ 	}
+ 
+ 	memset(&resource, 0, sizeof(resource));
+ 
+-	/* NOTE: PCI interrupts are always level / active_low / shared. */
++	/* NOTE: PCI interrupts are always level / active_low / shared. But not all
++	   interrupts > 15 are PCI interrupts. Rely on the ACPI IRQ definition for 
++	   parameters */
+ 	if (irq <= 15) {
+ 		resource.res.id = ACPI_RSTYPE_IRQ;
+ 		resource.res.length = sizeof(struct acpi_resource);
+-		resource.res.data.irq.edge_level = ACPI_LEVEL_SENSITIVE;
+-		resource.res.data.irq.active_high_low = ACPI_ACTIVE_LOW;
++		resource.res.data.irq.edge_level = link->irq.edge_level;
++		resource.res.data.irq.active_high_low = link->irq.active_high_low;
+ 		resource.res.data.irq.shared_exclusive = ACPI_SHARED;
+ 		resource.res.data.irq.number_of_interrupts = 1;
+ 		resource.res.data.irq.interrupts[0] = irq;
+@@ -320,8 +331,8 @@
+ 		resource.res.id = ACPI_RSTYPE_EXT_IRQ;
+ 		resource.res.length = sizeof(struct acpi_resource);
+ 		resource.res.data.extended_irq.producer_consumer = ACPI_CONSUMER;
+-		resource.res.data.extended_irq.edge_level = ACPI_LEVEL_SENSITIVE;
+-		resource.res.data.extended_irq.active_high_low = ACPI_ACTIVE_LOW;
++		resource.res.data.extended_irq.edge_level = link->irq.edge_level;
++		resource.res.data.extended_irq.active_high_low = link->irq.active_high_low;
+ 		resource.res.data.extended_irq.shared_exclusive = ACPI_SHARED;
+ 		resource.res.data.extended_irq.number_of_interrupts = 1;
+ 		resource.res.data.extended_irq.interrupts[0] = irq;
+@@ -329,6 +340,7 @@
+ 	}
+ 	resource.end.id = ACPI_RSTYPE_END_TAG;
+ 
++	/* Attempt to set the resource */
+ 	status = acpi_set_current_resources(link->handle, &buffer);
+ 	if (ACPI_FAILURE(status)) {
+ 		ACPI_DEBUG_PRINT((ACPI_DB_ERROR, "Error evaluating _SRS\n"));
+@@ -351,11 +363,13 @@
+ 	if (result) {
+ 		return_VALUE(result);
+ 	}
++   
+ 	if (link->irq.active != irq) {
+ 		ACPI_DEBUG_PRINT((ACPI_DB_ERROR, 
+ 			"Attempt to enable at IRQ %d resulted in IRQ %d\n", 
+ 			irq, link->irq.active));
+ 		link->irq.active = 0;
++		acpi_ut_evaluate_object (link->handle, "_DIS", 0, NULL);	   
+ 		return_VALUE(-ENODEV);
+ 	}
+ 
+@@ -403,7 +417,7 @@
+ 	ACPI_FUNCTION_TRACE("acpi_pci_link_check");
+ 
+ 	/*
+-	 * Pass #1: Update penalties to facilitate IRQ balancing.
++	 * Update penalties to facilitate IRQ balancing.
+ 	 */
+ 	list_for_each(node, &acpi_link.entries) {
+ 
+@@ -424,23 +438,23 @@
+ 		}
+ 	}
+ 
+-	/*
+-	 * Pass #2: Enable boot-disabled Links at 'best' IRQ.
+-	 */
+-	list_for_each(node, &acpi_link.entries) {
+-		int		irq = 0;
+-		int		i = 0;
++	return_VALUE(0);
++}
+ 
+-		link = list_entry(node, struct acpi_pci_link, node);
+-		if (!link || !link->irq.possible_count) {
+-			ACPI_DEBUG_PRINT((ACPI_DB_ERROR, "Invalid link context\n"));
+-			continue;
+-		}
++static int acpi_pci_link_allocate(struct acpi_pci_link* link) {
++	int irq;
++	int i;
+ 
+-		if (link->irq.active)
+-			continue;
++	ACPI_FUNCTION_TRACE("acpi_pci_link_allocate");
++
++	if (link->irq.setonboot)
++		return_VALUE(0);
+ 
++	if (link->irq.active) {
++		irq = link->irq.active;
++	} else {
+ 		irq = link->irq.possible[0];
++	}
+ 
+ 		/* 
+ 		 * Select the best IRQ.  This is done in reverse to promote 
+@@ -451,16 +465,20 @@
+ 				irq = link->irq.possible[i];
+ 		}
+ 
+-		/* Enable the link device at this IRQ. */
+-		acpi_pci_link_set(link, irq);
+-
++	/* Attempt to enable the link device at this IRQ. */
++	if (acpi_pci_link_set(link, irq)) {
++		printk(PREFIX "Unable to set IRQ for %s [%s] (likely buggy ACPI BIOS). Aborting ACPI-based IRQ routing. Try pci=noacpi or acpi=off\n",
++			acpi_device_name(link->device),
++			acpi_device_bid(link->device));
++		return_VALUE(-ENODEV);
++	} else {
+ 		acpi_irq_penalty[link->irq.active] += 100;
+-
+ 		printk(PREFIX "%s [%s] enabled at IRQ %d\n", 
+ 			acpi_device_name(link->device),
+ 			acpi_device_bid(link->device), link->irq.active);
+ 	}
+ 
++	link->irq.setonboot = 1;
+ 	return_VALUE(0);
+ }
+ 
+@@ -468,7 +486,9 @@
+ int
+ acpi_pci_link_get_irq (
+ 	acpi_handle		handle,
+-	int			index)
++	int			index,
++	int*			edge_level,
++	int*			active_high_low)
+ {
+ 	int                     result = 0;
+ 	struct acpi_device	*device = NULL;
+@@ -494,11 +514,17 @@
+ 		return_VALUE(0);
+ 	}
+ 
++	if (acpi_pci_link_allocate(link)) {
++		return -ENODEV;
++	}
++	   
+ 	if (!link->irq.active) {
+ 		ACPI_DEBUG_PRINT((ACPI_DB_ERROR, "Link disabled\n"));
+ 		return_VALUE(0);
+ 	}
+ 
++	if (edge_level) *edge_level = link->irq.edge_level;
++	if (active_high_low) *active_high_low = link->irq.active_high_low;
+ 	return_VALUE(link->irq.active);
+ }
+ 
+diff -Nru a/drivers/acpi/processor.c b/drivers/acpi/processor.c
+--- a/drivers/acpi/processor.c	Thu Aug 21 22:18:44 2003
++++ b/drivers/acpi/processor.c	Thu Aug 21 22:18:44 2003
+@@ -2273,7 +2273,6 @@
+ 	if (ACPI_FAILURE(status)) {
+ 		ACPI_DEBUG_PRINT((ACPI_DB_ERROR, 
+ 			"Error removing notify handler\n"));
+-		return_VALUE(-ENODEV);
+ 	}
+ 
+ 	acpi_processor_remove_fs(device);
+diff -Nru a/drivers/acpi/tables/tbconvrt.c b/drivers/acpi/tables/tbconvrt.c
+--- a/drivers/acpi/tables/tbconvrt.c	Thu Aug 21 22:18:44 2003
++++ b/drivers/acpi/tables/tbconvrt.c	Thu Aug 21 22:18:44 2003
+@@ -75,14 +75,10 @@
+ 	ACPI_FUNCTION_ENTRY ();
+ 
+ 
+-#if ACPI_MACHINE_WIDTH != 64
+-
+ 	if (RSDP->revision < 2) {
+ 		pointer_size = sizeof (u32);
+ 	}
+-	else
+-#endif
+-	{
++	else {
+ 		pointer_size = sizeof (u64);
+ 	}
+ 
+diff -Nru a/drivers/acpi/tables/tbget.c b/drivers/acpi/tables/tbget.c
+--- a/drivers/acpi/tables/tbget.c	Thu Aug 21 22:18:44 2003
++++ b/drivers/acpi/tables/tbget.c	Thu Aug 21 22:18:44 2003
+@@ -145,7 +145,7 @@
+ 		/* Create a logical address for the physical pointer*/
+ 
+ 		status = acpi_os_map_memory (address->pointer.physical, sizeof (struct acpi_table_header),
+-				  (void **) &header);
++				  (void *) &header);
+ 		if (ACPI_FAILURE (status)) {
+ 			ACPI_REPORT_ERROR (("Could not map memory at %8.8X%8.8X for length %X\n",
+ 				ACPI_HIDWORD (address->pointer.physical),
+@@ -361,7 +361,7 @@
+ 		 * into our address space.
+ 		 */
+ 		status = acpi_os_map_memory (address->pointer.physical, (acpi_size) header->length,
+-				  (void **) &full_table);
++				  (void *) &full_table);
+ 		if (ACPI_FAILURE (status)) {
+ 			ACPI_REPORT_ERROR (("Could not map memory for table [%4.4s] at %8.8X%8.8X for length %X\n",
+ 				header->signature,
+diff -Nru a/drivers/acpi/tables/tbinstal.c b/drivers/acpi/tables/tbinstal.c
+--- a/drivers/acpi/tables/tbinstal.c	Thu Aug 21 22:18:44 2003
++++ b/drivers/acpi/tables/tbinstal.c	Thu Aug 21 22:18:44 2003
+@@ -271,22 +271,40 @@
+ 		if (list_head->next) {
+ 			return_ACPI_STATUS (AE_ALREADY_EXISTS);
+ 		}
+-	}
+ 
+-	/*
+-	 * Link the new table in to the list of tables of this type.
+-	 * Just insert at the start of the list, order unimportant.
+-	 *
+-	 * table_desc->Prev is already NULL from calloc()
+-	 */
+-	table_desc->next = list_head->next;
+-	list_head->next = table_desc;
++		table_desc->next = list_head->next;
++		list_head->next = table_desc;
++
++		if (table_desc->next) {
++			table_desc->next->prev = table_desc;
++		}
+ 
+-	if (table_desc->next) {
+-		table_desc->next->prev = table_desc;
++		list_head->count++;
+ 	}
++	else {
++		/*
++		 * Link the new table in to the list of tables of this type.
++		 * Insert at the end of the list, order IS IMPORTANT.
++		 *
++		 * table_desc->Prev & Next are already NULL from calloc()
++		 */
++		list_head->count++;
++
++		if (!list_head->next) {
++			list_head->next = table_desc;
++		}
++		else {
++			table_desc->next = list_head->next;
+ 
+-	list_head->count++;
++			while (table_desc->next->next) {
++				table_desc->next = table_desc->next->next;
++			}
++
++			table_desc->next->next = table_desc;
++			table_desc->prev = table_desc->next;
++			table_desc->next = NULL;
++		}
++	}
+ 
+ 	/* Finish initialization of the table descriptor */
+ 
+diff -Nru a/drivers/acpi/tables/tbrsdt.c b/drivers/acpi/tables/tbrsdt.c
+--- a/drivers/acpi/tables/tbrsdt.c	Thu Aug 21 22:18:44 2003
++++ b/drivers/acpi/tables/tbrsdt.c	Thu Aug 21 22:18:44 2003
+@@ -85,7 +85,7 @@
+ 		 * Obtain access to the RSDP structure
+ 		 */
+ 		status = acpi_os_map_memory (address->pointer.physical, sizeof (struct rsdp_descriptor),
+-				  (void **) &rsdp);
++				  (void *) &rsdp);
+ 		if (ACPI_FAILURE (status)) {
+ 			return_ACPI_STATUS (status);
+ 		}
+diff -Nru a/drivers/acpi/tables/tbxfroot.c b/drivers/acpi/tables/tbxfroot.c
+--- a/drivers/acpi/tables/tbxfroot.c	Thu Aug 21 22:18:44 2003
++++ b/drivers/acpi/tables/tbxfroot.c	Thu Aug 21 22:18:44 2003
+@@ -179,7 +179,7 @@
+ 
+ 		if ((flags & ACPI_MEMORY_MODE) == ACPI_LOGICAL_ADDRESSING) {
+ 			status = acpi_os_map_memory (rsdp_address.pointer.physical, sizeof (struct rsdp_descriptor),
+-					  (void **) &acpi_gbl_RSDP);
++					  (void *) &acpi_gbl_RSDP);
+ 			if (ACPI_FAILURE (status)) {
+ 				return_ACPI_STATUS (status);
+ 			}
+@@ -423,7 +423,7 @@
+ 		 * 1) Search EBDA (low memory) paragraphs
+ 		 */
+ 		status = acpi_os_map_memory ((u64) ACPI_LO_RSDP_WINDOW_BASE, ACPI_LO_RSDP_WINDOW_SIZE,
+-				  (void **) &table_ptr);
++				  (void *) &table_ptr);
+ 		if (ACPI_FAILURE (status)) {
+ 			ACPI_DEBUG_PRINT ((ACPI_DB_ERROR, "Could not map memory at %X for length %X\n",
+ 				ACPI_LO_RSDP_WINDOW_BASE, ACPI_LO_RSDP_WINDOW_SIZE));
+@@ -447,7 +447,7 @@
+ 		 * 2) Search upper memory: 16-byte boundaries in E0000h-F0000h
+ 		 */
+ 		status = acpi_os_map_memory ((u64) ACPI_HI_RSDP_WINDOW_BASE, ACPI_HI_RSDP_WINDOW_SIZE,
+-				  (void **) &table_ptr);
++				  (void *) &table_ptr);
+ 		if (ACPI_FAILURE (status)) {
+ 			ACPI_DEBUG_PRINT ((ACPI_DB_ERROR, "Could not map memory at %X for length %X\n",
+ 				ACPI_HI_RSDP_WINDOW_BASE, ACPI_HI_RSDP_WINDOW_SIZE));
+diff -Nru a/drivers/acpi/tables.c b/drivers/acpi/tables.c
+--- a/drivers/acpi/tables.c	Thu Aug 21 22:18:44 2003
++++ b/drivers/acpi/tables.c	Thu Aug 21 22:18:44 2003
+@@ -33,6 +33,7 @@
+ #include <linux/irq.h>
+ #include <linux/errno.h>
+ #include <linux/acpi.h>
++#include <linux/bootmem.h>
+ 
+ #define PREFIX			"ACPI: "
+ 
+@@ -61,16 +62,14 @@
+ 
+ /* System Description Table (RSDT/XSDT) */
+ struct acpi_table_sdt {
+-	unsigned long		pa;		/* Physical Address */
+-	unsigned long		count;		/* Table count */
+-	struct {
+-		unsigned long		pa;
+-		enum acpi_table_id	id;
+-		unsigned long		size;
+-	}			entry[ACPI_MAX_TABLES];
++	unsigned long		pa;
++	enum acpi_table_id	id;
++	unsigned long		size;
+ } __attribute__ ((packed));
+ 
+-static struct acpi_table_sdt	sdt;
++static unsigned long		sdt_pa;		/* Physical Address */
++static unsigned long		sdt_count;	/* Table count */
++static struct acpi_table_sdt	*sdt_entry;
+ 
+ void
+ acpi_table_print (
+@@ -97,10 +96,11 @@
+ 	else
+ 		name = header->signature;
+ 
+-	printk(KERN_INFO PREFIX "%.4s (v%3.3d %6.6s %8.8s %5.5d.%5.5d) @ 0x%p\n",
++	printk(KERN_INFO PREFIX "%.4s (v%3.3d %6.6s %8.8s 0x%08x %.4s 0x%08x) @ 0x%p\n",
+ 		name, header->revision, header->oem_id,
+-		header->oem_table_id, header->oem_revision >> 16,
+-		header->oem_revision & 0xffff, (void *) phys_addr);
++		header->oem_table_id, header->oem_revision,
++		header->asl_compiler_id, header->asl_compiler_revision,
++		(void *) phys_addr);
+ }
+ 
+ 
+@@ -220,12 +220,16 @@
+ 	return (sum & 0xFF);
+ }
+ 
++/*
++ * acpi_get_table_header_early()
++ * for acpi_blacklisted(), acpi_table_get_sdt()
++ */
+ int __init
+ acpi_get_table_header_early (
+ 	enum acpi_table_id	id,
+ 	struct acpi_table_header **header)
+ {
+-	int i;
++	unsigned int i;
+ 	enum acpi_table_id temp_id;
+ 
+ 	/* DSDT is different from the rest */
+@@ -236,11 +240,11 @@
+ 
+ 	/* Locate the table. */
+ 
+-	for (i = 0; i < sdt.count; i++) {
+-		if (sdt.entry[i].id != temp_id)
++	for (i = 0; i < sdt_count; i++) {
++		if (sdt_entry[i].id != temp_id)
+ 			continue;
+ 		*header = (void *)
+-			__acpi_map_table(sdt.entry[i].pa, sdt.entry[i].size);
++			__acpi_map_table(sdt_entry[i].pa, sdt_entry[i].size);
+ 		if (!*header) {
+ 			printk(KERN_WARNING PREFIX "Unable to map %s\n",
+ 			       acpi_table_signatures[temp_id]);
+@@ -282,18 +286,18 @@
+ 	acpi_table_entry_header	*entry = NULL;
+ 	unsigned long		count = 0;
+ 	unsigned long		madt_end = 0;
+-	int			i = 0;
++	unsigned int			i = 0;
+ 
+ 	if (!handler)
+ 		return -EINVAL;
+ 
+ 	/* Locate the MADT (if exists). There should only be one. */
+ 
+-	for (i = 0; i < sdt.count; i++) {
+-		if (sdt.entry[i].id != id)
++	for (i = 0; i < sdt_count; i++) {
++		if (sdt_entry[i].id != id)
+ 			continue;
+ 		madt = (void *)
+-			__acpi_map_table(sdt.entry[i].pa, sdt.entry[i].size);
++			__acpi_map_table(sdt_entry[i].pa, sdt_entry[i].size);
+ 		if (!madt) {
+ 			printk(KERN_WARNING PREFIX "Unable to map %s\n",
+ 			       acpi_table_signatures[id]);
+@@ -308,7 +312,7 @@
+ 		return -ENODEV;
+ 	}
+ 
+-	madt_end = (unsigned long) madt + sdt.entry[i].size;
++	madt_end = (unsigned long) madt + sdt_entry[i].size;
+ 
+ 	/* Parse all entries looking for a match. */
+ 
+@@ -344,15 +348,15 @@
+ 	acpi_table_handler	handler)
+ {
+ 	int			count = 0;
+-	int			i = 0;
++	unsigned int		i = 0;
+ 
+ 	if (!handler)
+ 		return -EINVAL;
+ 
+-	for (i = 0; i < sdt.count; i++) {
+-		if (sdt.entry[i].id != id)
++	for (i = 0; i < sdt_count; i++) {
++		if (sdt_entry[i].id != id)
+ 			continue;
+-		handler(sdt.entry[i].pa, sdt.entry[i].size);
++		handler(sdt_entry[i].pa, sdt_entry[i].size);
+ 		count++;
+ 	}
+ 
+@@ -365,7 +369,7 @@
+ 	struct acpi_table_rsdp	*rsdp)
+ {
+ 	struct acpi_table_header *header = NULL;
+-	int			i, id = 0;
++	unsigned int		i, id = 0;
+ 
+ 	if (!rsdp)
+ 		return -EINVAL;
+@@ -377,11 +381,11 @@
+ 			
+ 		struct acpi_table_xsdt	*mapped_xsdt = NULL;
+ 
+-		sdt.pa = ((struct acpi20_table_rsdp*)rsdp)->xsdt_address;
++		sdt_pa = ((struct acpi20_table_rsdp*)rsdp)->xsdt_address;
+ 
+ 		/* map in just the header */
+ 		header = (struct acpi_table_header *)
+-			__acpi_map_table(sdt.pa, sizeof(struct acpi_table_header));
++			__acpi_map_table(sdt_pa, sizeof(struct acpi_table_header));
+ 
+ 		if (!header) {
+ 			printk(KERN_WARNING PREFIX "Unable to map XSDT header\n");
+@@ -390,7 +394,7 @@
+ 
+ 		/* remap in the entire table before processing */
+ 		mapped_xsdt = (struct acpi_table_xsdt *)
+-			__acpi_map_table(sdt.pa, header->length);
++			__acpi_map_table(sdt_pa, header->length);
+ 		if (!mapped_xsdt) {
+ 			printk(KERN_WARNING PREFIX "Unable to map XSDT\n");
+ 			return -ENODEV;
+@@ -407,15 +411,21 @@
+ 			return -ENODEV;
+ 		}
+ 
+-		sdt.count = (header->length - sizeof(struct acpi_table_header)) >> 3;
+-		if (sdt.count > ACPI_MAX_TABLES) {
++		sdt_count = (header->length - sizeof(struct acpi_table_header)) >> 3;
++		if (sdt_count > ACPI_MAX_TABLES) {
+ 			printk(KERN_WARNING PREFIX "Truncated %lu XSDT entries\n",
+-				(sdt.count - ACPI_MAX_TABLES));
+-			sdt.count = ACPI_MAX_TABLES;
++				(sdt_count - ACPI_MAX_TABLES));
++			sdt_count = ACPI_MAX_TABLES;
+ 		}
+ 
+-		for (i = 0; i < sdt.count; i++)
+-			sdt.entry[i].pa = (unsigned long) mapped_xsdt->entry[i];
++		sdt_entry = alloc_bootmem(sdt_count * sizeof(struct acpi_table_sdt));
++		if (!sdt_entry) {
++			printk(KERN_ERR "ACPI: Could not allocate mem for SDT entries!\n");
++			return -ENOMEM;
++		}
++
++		for (i = 0; i < sdt_count; i++)
++			sdt_entry[i].pa = (unsigned long) mapped_xsdt->entry[i];
+ 	}
+ 
+ 	/* Then check RSDT */
+@@ -424,11 +434,11 @@
+ 
+ 		struct acpi_table_rsdt	*mapped_rsdt = NULL;
+ 
+-		sdt.pa = rsdp->rsdt_address;
++		sdt_pa = rsdp->rsdt_address;
+ 
+ 		/* map in just the header */
+ 		header = (struct acpi_table_header *)
+-			__acpi_map_table(sdt.pa, sizeof(struct acpi_table_header));
++			__acpi_map_table(sdt_pa, sizeof(struct acpi_table_header));
+ 		if (!header) {
+ 			printk(KERN_WARNING PREFIX "Unable to map RSDT header\n");
+ 			return -ENODEV;
+@@ -436,7 +446,7 @@
+ 
+ 		/* remap in the entire table before processing */
+ 		mapped_rsdt = (struct acpi_table_rsdt *)
+-			__acpi_map_table(sdt.pa, header->length);
++			__acpi_map_table(sdt_pa, header->length);
+ 		if (!mapped_rsdt) {
+ 			printk(KERN_WARNING PREFIX "Unable to map RSDT\n");
+ 			return -ENODEV;
+@@ -453,15 +463,21 @@
+ 			return -ENODEV;
+ 		}
+ 
+-		sdt.count = (header->length - sizeof(struct acpi_table_header)) >> 2;
+-		if (sdt.count > ACPI_MAX_TABLES) {
++		sdt_count = (header->length - sizeof(struct acpi_table_header)) >> 2;
++		if (sdt_count > ACPI_MAX_TABLES) {
+ 			printk(KERN_WARNING PREFIX "Truncated %lu RSDT entries\n",
+-				(sdt.count - ACPI_TABLE_COUNT));
+-			sdt.count = ACPI_MAX_TABLES;
++				(sdt_count - ACPI_MAX_TABLES));
++			sdt_count = ACPI_MAX_TABLES;
+ 		}
+ 
+-		for (i = 0; i < sdt.count; i++)
+-			sdt.entry[i].pa = (unsigned long) mapped_rsdt->entry[i];
++		sdt_entry = alloc_bootmem(sdt_count * sizeof(struct acpi_table_sdt));
++		if (!sdt_entry) {
++			printk(KERN_ERR "ACPI: Could not allocate mem for SDT entries!\n");
++			return -ENOMEM;
++		}
++
++		for (i = 0; i < sdt_count; i++)
++			sdt_entry[i].pa = (unsigned long) mapped_rsdt->entry[i];
+ 	}
+ 
+ 	else {
+@@ -469,38 +485,38 @@
+ 		return -ENODEV;
+ 	}
+ 
+-	acpi_table_print(header, sdt.pa);
++	acpi_table_print(header, sdt_pa);
+ 
+-	for (i = 0; i < sdt.count; i++) {
++	for (i = 0; i < sdt_count; i++) {
+ 
+ 		/* map in just the header */
+ 		header = (struct acpi_table_header *)
+-			__acpi_map_table(sdt.entry[i].pa,
++			__acpi_map_table(sdt_entry[i].pa,
+ 				sizeof(struct acpi_table_header));
+ 		if (!header)
+ 			continue;
+ 
+ 		/* remap in the entire table before processing */
+ 		header = (struct acpi_table_header *)
+-			__acpi_map_table(sdt.entry[i].pa,
++			__acpi_map_table(sdt_entry[i].pa,
+ 				header->length);
+ 		if (!header)
+ 			continue;
+ 	               
+-		acpi_table_print(header, sdt.entry[i].pa);
++		acpi_table_print(header, sdt_entry[i].pa);
+ 
+ 		if (acpi_table_compute_checksum(header, header->length)) {
+ 			printk(KERN_WARNING "  >>> ERROR: Invalid checksum\n");
+ 			continue;
+ 		}
+ 
+-		sdt.entry[i].size = header->length;
++		sdt_entry[i].size = header->length;
+ 
+ 		for (id = 0; id < ACPI_TABLE_COUNT; id++) {
+ 			if (!strncmp((char *) &header->signature,
+ 				acpi_table_signatures[id],
+ 				sizeof(header->signature))) {
+-				sdt.entry[i].id = id;
++				sdt_entry[i].id = id;
+ 			}
+ 		}
+ 	}
+@@ -525,8 +541,6 @@
+ 	unsigned long		rsdp_phys = 0;
+ 	int			result = 0;
+ 
+-	memset(&sdt, 0, sizeof(struct acpi_table_sdt));
+-
+ 	/* Locate and map the Root System Description Table (RSDP) */
+ 
+ 	rsdp_phys = acpi_find_rsdp();
+@@ -541,7 +555,7 @@
+ 		return -ENODEV;
+ 	}
+ 
+-	printk(KERN_INFO PREFIX "RSDP (v%3.3d %6.6s                     ) @ 0x%p\n",
++	printk(KERN_INFO PREFIX "RSDP (v%3.3d %6.6s                                    ) @ 0x%p\n",
+ 		rsdp->revision, rsdp->oem_id, (void *) rsdp_phys);
+ 
+ 	if (rsdp->revision < 2)
+diff -Nru a/drivers/acpi/toshiba_acpi.c b/drivers/acpi/toshiba_acpi.c
+--- a/drivers/acpi/toshiba_acpi.c	Thu Aug 21 22:18:44 2003
++++ b/drivers/acpi/toshiba_acpi.c	Thu Aug 21 22:18:44 2003
+@@ -33,7 +33,7 @@
+  *
+  */
+ 
+-#define TOSHIBA_ACPI_VERSION	"0.15"
++#define TOSHIBA_ACPI_VERSION	"0.16"
+ #define PROC_INTERFACE_VERSION	1
+ 
+ #include <linux/kernel.h>
+@@ -108,6 +108,7 @@
+ 	int result;
+ 	char* str2 = kmalloc(n + 1, GFP_KERNEL);
+ 	if (str2 == 0) return 0;
++	/* NOTE: don't even _think_ about replacing this with strlcpy */
+ 	strncpy(str2, str, n);
+ 	str2[n] = 0;
+ 	va_start(args, format);
+diff -Nru a/drivers/acpi/utilities/utglobal.c b/drivers/acpi/utilities/utglobal.c
+--- a/drivers/acpi/utilities/utglobal.c	Thu Aug 21 22:18:44 2003
++++ b/drivers/acpi/utilities/utglobal.c	Thu Aug 21 22:18:44 2003
+@@ -307,9 +307,9 @@
+ 	/***********    Name,   Signature, Global typed pointer     Signature size,      Type                  How many allowed?,    Contains valid AML? */
+ 
+ 	/* RSDP 0 */ {RSDP_NAME, RSDP_SIG, NULL,                    sizeof (RSDP_SIG)-1, ACPI_TABLE_ROOT     | ACPI_TABLE_SINGLE},
+-	/* DSDT 1 */ {DSDT_SIG,  DSDT_SIG, (void **) &acpi_gbl_DSDT, sizeof (DSDT_SIG)-1, ACPI_TABLE_SECONDARY| ACPI_TABLE_SINGLE  | ACPI_TABLE_EXECUTABLE},
+-	/* FADT 2 */ {FADT_SIG,  FADT_SIG, (void **) &acpi_gbl_FADT, sizeof (FADT_SIG)-1, ACPI_TABLE_PRIMARY | ACPI_TABLE_SINGLE},
+-	/* FACS 3 */ {FACS_SIG,  FACS_SIG, (void **) &acpi_gbl_FACS, sizeof (FACS_SIG)-1, ACPI_TABLE_SECONDARY| ACPI_TABLE_SINGLE},
++	/* DSDT 1 */ {DSDT_SIG,  DSDT_SIG, (void *) &acpi_gbl_DSDT, sizeof (DSDT_SIG)-1, ACPI_TABLE_SECONDARY| ACPI_TABLE_SINGLE  | ACPI_TABLE_EXECUTABLE},
++	/* FADT 2 */ {FADT_SIG,  FADT_SIG, (void *) &acpi_gbl_FADT, sizeof (FADT_SIG)-1, ACPI_TABLE_PRIMARY | ACPI_TABLE_SINGLE},
++	/* FACS 3 */ {FACS_SIG,  FACS_SIG, (void *) &acpi_gbl_FACS, sizeof (FACS_SIG)-1, ACPI_TABLE_SECONDARY| ACPI_TABLE_SINGLE},
+ 	/* PSDT 4 */ {PSDT_SIG,  PSDT_SIG, NULL,                    sizeof (PSDT_SIG)-1, ACPI_TABLE_PRIMARY  | ACPI_TABLE_MULTIPLE | ACPI_TABLE_EXECUTABLE},
+ 	/* SSDT 5 */ {SSDT_SIG,  SSDT_SIG, NULL,                    sizeof (SSDT_SIG)-1, ACPI_TABLE_PRIMARY  | ACPI_TABLE_MULTIPLE | ACPI_TABLE_EXECUTABLE},
+ 	/* XSDT 6 */ {XSDT_SIG,  XSDT_SIG, NULL,                    sizeof (RSDT_SIG)-1, ACPI_TABLE_ROOT     | ACPI_TABLE_SINGLE},
+diff -Nru a/drivers/hotplug/Config.in b/drivers/hotplug/Config.in
+--- a/drivers/hotplug/Config.in	Thu Aug 21 22:18:44 2003
++++ b/drivers/hotplug/Config.in	Thu Aug 21 22:18:44 2003
+@@ -11,6 +11,6 @@
+ if [ "$CONFIG_X86_IO_APIC" = "y" ]; then
+    dep_tristate '  IBM PCI Hotplug driver' CONFIG_HOTPLUG_PCI_IBM $CONFIG_HOTPLUG_PCI $CONFIG_X86_IO_APIC $CONFIG_X86
+ fi
+-dep_tristate '  ACPI PCI Hotplug driver' CONFIG_HOTPLUG_PCI_ACPI $CONFIG_ACPI $CONFIG_HOTPLUG_PCI
++dep_tristate '  ACPI PCI Hotplug driver' CONFIG_HOTPLUG_PCI_ACPI $CONFIG_ACPI_INTERPRETER $CONFIG_HOTPLUG_PCI
+ 
+ endmenu
+diff -Nru a/include/acpi/acconfig.h b/include/acpi/acconfig.h
+--- a/include/acpi/acconfig.h	Thu Aug 21 22:18:44 2003
++++ b/include/acpi/acconfig.h	Thu Aug 21 22:18:44 2003
+@@ -64,7 +64,7 @@
+ 
+ /* Version string */
+ 
+-#define ACPI_CA_VERSION                 0x20030619
++#define ACPI_CA_VERSION                 0x20030813
+ 
+ /* Maximum objects in the various object caches */
+ 
+diff -Nru a/include/acpi/acpi_drivers.h b/include/acpi/acpi_drivers.h
+--- a/include/acpi/acpi_drivers.h	Thu Aug 21 22:18:44 2003
++++ b/include/acpi/acpi_drivers.h	Thu Aug 21 22:18:44 2003
+@@ -174,7 +174,7 @@
+ #define ACPI_PCI_LINK_FILE_STATUS	"state"
+ 
+ int acpi_pci_link_check (void);
+-int acpi_pci_link_get_irq (acpi_handle handle, int index);
++int acpi_pci_link_get_irq (acpi_handle handle, int index, int* edge_level, int* active_high_low);
+ int acpi_pci_link_init (void);
+ void acpi_pci_link_exit (void);
+ 
+diff -Nru a/include/acpi/platform/acenv.h b/include/acpi/platform/acenv.h
+--- a/include/acpi/platform/acenv.h	Thu Aug 21 22:18:44 2003
++++ b/include/acpi/platform/acenv.h	Thu Aug 21 22:18:44 2003
+@@ -134,6 +134,9 @@
+ #elif defined(__FreeBSD__)
+ #include "acfreebsd.h"
+ 
++#elif defined(__NetBSD__)
++#include "acnetbsd.h"
++
+ #elif defined(MODESTO)
+ #include "acmodesto.h"
+ 
+@@ -187,13 +190,14 @@
+ #define DEBUGGER_SINGLE_THREADED    0
+ #define DEBUGGER_MULTI_THREADED     1
+ 
++#ifndef DEBUGGER_THREADING
+ #ifdef ACPI_APPLICATION
+ #define DEBUGGER_THREADING          DEBUGGER_SINGLE_THREADED
+ 
+ #else
+ #define DEBUGGER_THREADING          DEBUGGER_MULTI_THREADED
+ #endif
+-
++#endif /* !DEBUGGER_THREADING */
+ 
+ /******************************************************************************
+  *
+diff -Nru a/include/asm-i386/acpi.h b/include/asm-i386/acpi.h
+--- a/include/asm-i386/acpi.h	Thu Aug 21 22:18:44 2003
++++ b/include/asm-i386/acpi.h	Thu Aug 21 22:18:44 2003
+@@ -106,30 +106,38 @@
+         :"0"(n_hi), "1"(n_lo))
+ 
+ 
+-#ifdef CONFIG_ACPI_HT_ONLY
++#ifdef CONFIG_ACPI_BOOT 
+ extern int acpi_lapic;
+-#define acpi_ioapic 0
+-#else
+-#ifndef CONFIG_ACPI_BOOT
+-#define acpi_lapic 0
+-#define acpi_ioapic 0
+-#else
+-#ifdef CONFIG_X86_LOCAL_APIC
+-extern int acpi_lapic;
+-#else
+-#define acpi_lapic 0
+-#endif
+-#ifdef CONFIG_X86_IO_APIC
+ extern int acpi_ioapic;
+-#else
+-#define acpi_ioapic 0
+-#endif
+-#endif
++
+ 
+ /* Fixmap pages to reserve for ACPI boot-time tables (see fixmap.h) */
+ #define FIX_ACPI_PAGES 4
+ 
+-#endif /*CONFIG_ACPI_BOOT*/
++#ifdef CONFIG_X86_IO_APIC
++extern int skip_ioapic_setup;
++
++static inline void disable_ioapic_setup(void)
++{
++	skip_ioapic_setup = 1;
++}
++
++static inline int ioapic_setup_disabled(void)
++{
++	return skip_ioapic_setup;
++}
++
++#else
++static inline void disable_ioapic_setup(void)
++{ }
++
++#endif
++
++#else	/* CONFIG_ACPI_BOOT */
++#  define acpi_lapic 0
++#  define acpi_ioapic 0
++
++#endif
+ 
+ #ifdef CONFIG_ACPI_SLEEP
+ 
+diff -Nru a/include/asm-i386/io_apic.h b/include/asm-i386/io_apic.h
+--- a/include/asm-i386/io_apic.h	Thu Aug 21 22:18:44 2003
++++ b/include/asm-i386/io_apic.h	Thu Aug 21 22:18:44 2003
+@@ -144,7 +144,7 @@
+ extern int io_apic_get_unique_id (int ioapic, int apic_id);
+ extern int io_apic_get_version (int ioapic);
+ extern int io_apic_get_redir_entries (int ioapic);
+-extern int io_apic_set_pci_routing (int ioapic, int pin, int irq);
++extern int io_apic_set_pci_routing (int ioapic, int pin, int irq, int edge_level, int active_high_low);
+ #endif
+ 
+ #else  /* !CONFIG_X86_IO_APIC */
+diff -Nru a/include/asm-i386/mpspec.h b/include/asm-i386/mpspec.h
+--- a/include/asm-i386/mpspec.h	Thu Aug 21 22:18:44 2003
++++ b/include/asm-i386/mpspec.h	Thu Aug 21 22:18:44 2003
+@@ -229,7 +229,9 @@
+ extern void mp_config_acpi_legacy_irqs (void);
+ extern void mp_config_ioapic_for_sci(int irq);
+ extern void mp_parse_prt (void);
+-#endif /*CONFIG_X86_IO_APIC*/
++#else /*!CONFIG_X86_IO_APIC*/
++static inline void mp_config_ioapic_for_sci(int irq) { }
++#endif /*!CONFIG_X86_IO_APIC*/
+ 
+ #endif /*CONFIG_ACPI_BOOT*/
+ 
+diff -Nru a/include/linux/acpi.h b/include/linux/acpi.h
+--- a/include/linux/acpi.h	Thu Aug 21 22:18:44 2003
++++ b/include/linux/acpi.h	Thu Aug 21 22:18:44 2003
+@@ -367,7 +367,14 @@
+ void acpi_numa_memory_affinity_init (struct acpi_table_memory_affinity *ma);
+ void acpi_numa_arch_fixup(void);
+ 
+-#endif /*CONFIG_ACPI_BOOT*/
++#else /*!CONFIG_ACPI_BOOT*/
++
++static inline int acpi_boot_init(void)
++{
++	return 0;
++}
++
++#endif /*!CONFIG_ACPI_BOOT*/
+ 
+ 
+ #ifdef CONFIG_ACPI_PCI
+@@ -413,11 +420,17 @@
+ 
+ #endif /*CONFIG_ACPI_EC*/
+ 
+-#ifdef CONFIG_ACPI
++#ifdef CONFIG_ACPI_INTERPRETER
+ 
+-int acpi_init(void);
+ int acpi_blacklisted(void);
+ 
+-#endif /*CONFIG_ACPI*/
++#else /*!CONFIG_ACPI_INTERPRETER*/
++
++static inline int acpi_blacklisted(void)
++{
++	return 0;
++}
++
++#endif /*!CONFIG_ACPI_INTERPRETER*/
+ 
+ #endif /*_LINUX_ACPI_H*/
